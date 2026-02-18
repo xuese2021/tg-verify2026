@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>人机验证</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 24px;
+            padding: 30px 25px;
+            max-width: 380px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+        }
+        
+        .icon { font-size: 48px; margin-bottom: 12px; }
+        
+        h1 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        
+        .subtitle {
+            color: #888;
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+        
+        .puzzle-wrapper {
+            position: relative;
+            width: 300px;
+            height: 180px;
+            margin: 15px auto;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        
+        .puzzle-canvas { width: 100%; height: 100%; display: block; }
+        
+        .puzzle-piece-canvas {
+            position: absolute;
+            top: 0;
+            left: 10px;
+            pointer-events: none;
+            filter: drop-shadow(3px 3px 5px rgba(0,0,0,0.4));
+        }
+        
+        .slider-container { margin-top: 20px; }
+        
+        .slider-track {
+            position: relative;
+            height: 50px;
+            background: linear-gradient(135deg, #e8e8e8, #f5f5f5);
+            border-radius: 25px;
+            overflow: hidden;
+            border: 2px solid #ddd;
+        }
+        
+        .slider-progress {
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 0;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 25px;
+            transition: none;
+        }
+        
+        .slider-text {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            line-height: 50px;
+            color: #999;
+            font-size: 14px;
+            user-select: none;
+        }
+        
+        .slider-thumb {
+            position: absolute;
+            left: 0; top: 0;
+            width: 55px; height: 46px;
+            background: linear-gradient(135deg, #fff, #f0f0f0);
+            border-radius: 23px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: grab;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            transition: box-shadow 0.2s;
+            user-select: none;
+        }
+        
+        .slider-thumb:active { cursor: grabbing; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .slider-thumb.success { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; }
+        .slider-thumb.error { background: linear-gradient(135deg, #f44336, #d32f2f); color: white; animation: shake 0.5s; }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        
+        .refresh-btn {
+            margin-top: 15px;
+            padding: 8px 20px;
+            background: transparent;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            color: #666;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        
+        .refresh-btn:hover { background: #f5f5f5; }
+        
+        .status {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+        
+        .status.success { background: #e8f5e9; color: #2e7d32; }
+        .status.error { background: #ffebee; color: #c62828; }
+        
+        .success-page {
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        .success-page.show { display: block; }
+        
+        .success-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: bounce 0.6s ease;
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 拼图验证 -->
+        <div id="puzzlePage">
+            <div class="icon">🧩</div>
+            <h1>滑动完成拼图</h1>
+            <p class="subtitle">拖动滑块，使拼图块对准缺口</p>
+            
+            <div class="puzzle-wrapper">
+                <canvas class="puzzle-canvas" id="puzzleCanvas" width="300" height="180"></canvas>
+                <canvas class="puzzle-piece-canvas" id="pieceCanvas"></canvas>
+            </div>
+            
+            <div class="slider-container">
+                <div class="slider-track" id="sliderTrack">
+                    <div class="slider-progress" id="sliderProgress"></div>
+                    <span class="slider-text">➜ 拖动滑块完成拼图</span>
+                    <div class="slider-thumb" id="sliderThumb">⬌</div>
+                </div>
+            </div>
+            
+            <button class="refresh-btn" id="refreshBtn">🔄 换一张图片</button>
+            <div id="status" class="status" style="display:none;"></div>
+        </div>
+        
+        <!-- 成功页面 -->
+        <div class="success-page" id="successPage">
+            <div class="success-icon">✅</div>
+            <h1>验证成功！</h1>
+            <p class="subtitle">正在返回机器人...</p>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram?.WebApp;
+        if (!tg) {
+            document.querySelector('.container').innerHTML = `
+                <div class="icon">⚠️</div>
+                <h1>加载失败</h1>
+                <p class="subtitle">请确保从 Telegram 中打开此页面</p>
+            `;
+        } else {
+            tg.ready();
+            tg.expand();
+        }
+        
+        // initData：InlineKeyboardButton 有 user，KeyboardButton 无。优先从 tg 取，备用从 hash 解析
+        let user = tg?.initDataUnsafe?.user;
+        let userId = user?.id;
+        if (!userId && typeof window !== 'undefined' && window.location?.hash) {
+            try {
+                const params = new URLSearchParams(window.location.hash.slice(1));
+                const tgData = params.get('tgWebAppData');
+                if (tgData) {
+                    const initParams = new URLSearchParams(tgData);
+                    const userStr = initParams.get('user');
+                    if (userStr) {
+                        user = JSON.parse(decodeURIComponent(userStr));
+                        userId = user?.id;
+                    }
+                }
+            } catch (e) {}
+        }
+        
+        let puzzleAttempts = 0;
+        const maxAttempts = 5;
+        
+        // 颜色方案
+        const colorSchemes = [
+            ['#667eea', '#764ba2', '#f093fb'],
+            ['#11998e', '#38ef7d', '#00b4db'],
+            ['#ff6b6b', '#feca57', '#ff9ff3'],
+            ['#4facfe', '#00f2fe', '#43e97b'],
+            ['#fa709a', '#fee140', '#f8b500'],
+            ['#a18cd1', '#fbc2eb', '#a6c1ee'],
+            ['#30cfd0', '#330867', '#667db6'],
+            ['#f5576c', '#f093fb', '#f5af19']
+        ];
+        
+        let slotX = 0, slotY = 0;
+        const pieceSize = 50;
+        const tolerance = 8;
+        
+        function showStatus(type, message) {
+            const status = document.getElementById('status');
+            status.className = 'status ' + type;
+            status.innerHTML = message;
+            status.style.display = 'block';
+        }
+        
+        function loadNewImage() {
+            const canvas = document.getElementById('puzzleCanvas');
+            const ctx = canvas.getContext('2d');
+            const pieceCanvas = document.getElementById('pieceCanvas');
+            const pieceCtx = pieceCanvas.getContext('2d');
+            
+            const colors = colorSchemes[Math.floor(Math.random() * colorSchemes.length)];
+            
+            // 渐变背景
+            const gradient = ctx.createLinearGradient(0, 0, 300, 180);
+            gradient.addColorStop(0, colors[0]);
+            gradient.addColorStop(0.5, colors[1]);
+            gradient.addColorStop(1, colors[2]);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 300, 180);
+            
+            // 装饰
+            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            for (let i = 0; i < 8; i++) {
+                ctx.beginPath();
+                ctx.arc(Math.random() * 300, Math.random() * 180, Math.random() * 40 + 15, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // 随机位置
+            slotX = Math.floor(Math.random() * 100) + 150;
+            slotY = Math.floor(Math.random() * 60) + 60;
+            
+            // 缺口
+            ctx.save();
+            drawPuzzleShape(ctx, slotX, slotY, pieceSize);
+            ctx.clip();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.fillRect(slotX - 10, slotY - 10, pieceSize + 20, pieceSize + 20);
+            ctx.restore();
+            
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.lineWidth = 2;
+            drawPuzzleShape(ctx, slotX, slotY, pieceSize);
+            ctx.stroke();
+            
+            // 拼图块
+            pieceCanvas.width = pieceSize + 20;
+            pieceCanvas.height = pieceSize + 20;
+            pieceCanvas.style.top = (slotY - 10) + 'px';
+            pieceCanvas.style.left = '10px';
+            
+            const pg = pieceCtx.createLinearGradient(0, 0, pieceSize + 20, pieceSize + 20);
+            pg.addColorStop(0, colors[0]);
+            pg.addColorStop(0.5, colors[1]);
+            pg.addColorStop(1, colors[2]);
+            
+            pieceCtx.save();
+            drawPuzzleShape(pieceCtx, 10, 10, pieceSize);
+            pieceCtx.clip();
+            pieceCtx.fillStyle = pg;
+            pieceCtx.fillRect(0, 0, pieceSize + 20, pieceSize + 20);
+            pieceCtx.fillStyle = 'rgba(255,255,255,0.15)';
+            pieceCtx.beginPath();
+            pieceCtx.arc(35, 35, 20, 0, Math.PI * 2);
+            pieceCtx.fill();
+            pieceCtx.restore();
+            
+            pieceCtx.strokeStyle = '#fff';
+            pieceCtx.lineWidth = 3;
+            drawPuzzleShape(pieceCtx, 10, 10, pieceSize);
+            pieceCtx.stroke();
+            
+            resetSlider();
+        }
+        
+        function drawPuzzleShape(ctx, x, y, size) {
+            const r = size / 5;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + size * 0.4, y);
+            ctx.arc(x + size * 0.5, y, r, Math.PI, 0, false);
+            ctx.lineTo(x + size, y);
+            ctx.lineTo(x + size, y + size * 0.4);
+            ctx.arc(x + size, y + size * 0.5, r, -Math.PI/2, Math.PI/2, false);
+            ctx.lineTo(x + size, y + size);
+            ctx.lineTo(x, y + size);
+            ctx.lineTo(x, y);
+            ctx.closePath();
+        }
+        
+        function initSlider() {
+            const thumb = document.getElementById('sliderThumb');
+            const track = document.getElementById('sliderTrack');
+            const progress = document.getElementById('sliderProgress');
+            const piece = document.getElementById('pieceCanvas');
+            
+            let isDragging = false;
+            let startX = 0;
+            
+            function startDrag(e) {
+                isDragging = true;
+                startX = (e.touches ? e.touches[0].clientX : e.clientX) - thumb.offsetLeft;
+                thumb.style.cursor = 'grabbing';
+            }
+            
+            function onDrag(e) {
+                if (!isDragging) return;
+                e.preventDefault();
+                
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                let newLeft = clientX - startX;
+                const maxLeft = track.offsetWidth - thumb.offsetWidth;
+                
+                newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+                
+                thumb.style.left = newLeft + 'px';
+                progress.style.width = newLeft + 'px';
+                piece.style.left = (10 + newLeft) + 'px';
+            }
+            
+            function endDrag() {
+                if (!isDragging) return;
+                isDragging = false;
+                thumb.style.cursor = 'grab';
+                
+                const currentLeft = parseInt(thumb.style.left) || 0;
+                const targetLeft = slotX - 10;
+                
+                if (Math.abs(currentLeft - targetLeft) < tolerance) {
+                    onSuccess();
+                } else {
+                    onFail();
+                }
+            }
+            
+            thumb.addEventListener('mousedown', startDrag);
+            thumb.addEventListener('touchstart', startDrag, { passive: false });
+            document.addEventListener('mousemove', onDrag);
+            document.addEventListener('touchmove', onDrag, { passive: false });
+            document.addEventListener('mouseup', endDrag);
+            document.addEventListener('touchend', endDrag);
+        }
+        
+        function onSuccess() {
+            document.getElementById('sliderThumb').classList.add('success');
+            showStatus('success', '✅ 验证通过！');
+            
+            setTimeout(completeVerification, 800);
+        }
+        
+        function onFail() {
+            puzzleAttempts++;
+            document.getElementById('sliderThumb').classList.add('error');
+            
+            if (puzzleAttempts >= maxAttempts) {
+                showStatus('error', '❌ 验证失败次数过多');
+                setTimeout(() => tg.close(), 2000);
+                return;
+            }
+            
+            showStatus('error', '❌ 位置不对，请重试 (' + (maxAttempts - puzzleAttempts) + ' 次机会)');
+            
+            setTimeout(() => {
+                document.getElementById('sliderThumb').classList.remove('error');
+                loadNewImage();
+            }, 1000);
+        }
+        
+        function resetSlider() {
+            const thumb = document.getElementById('sliderThumb');
+            const progress = document.getElementById('sliderProgress');
+            const piece = document.getElementById('pieceCanvas');
+            
+            thumb.style.left = '0px';
+            progress.style.width = '0px';
+            piece.style.left = '10px';
+            thumb.classList.remove('success', 'error');
+            document.getElementById('status').style.display = 'none';
+        }
+        
+        function completeVerification() {
+            document.getElementById('puzzlePage').style.display = 'none';
+            document.getElementById('successPage').classList.add('show');
+            
+            // 发送验证数据到 Bot
+            tg.sendData(JSON.stringify({
+                verified: true,
+                user_id: userId,
+                attempts: puzzleAttempts
+            }));
+            
+            setTimeout(() => tg.close(), 1500);
+        }
+        
+        // 检查是否从 Telegram 打开
+        if (!userId) {
+            document.querySelector('.container').innerHTML = `
+                <div class="icon">⚠️</div>
+                <h1>访问受限</h1>
+                <p class="subtitle">请从 Telegram 机器人中打开此页面</p>
+            `;
+        } else {
+            loadNewImage();
+            initSlider();
+            document.getElementById('refreshBtn').onclick = loadNewImage;
+        }
+    </script>
+</body>
+</html>
